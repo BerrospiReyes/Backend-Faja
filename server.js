@@ -16,9 +16,9 @@ let estadoSistema = {
 
 let events = [];
 
-// --- ENDPOINTS PARA EL ESP32 (El ESP32 llama aquí) ---
+// --- ENDPOINTS PARA EL ESP32 ---
 
-// 1. El ESP32 envía sus datos aquí constantemente
+// El ESP32 envía sus datos aquí constantemente
 app.post('/esp/update', (req, res) => {
     const data = req.body;
     // Actualizamos sensores y contadores que vienen del ESP32
@@ -38,13 +38,13 @@ app.post('/esp/update', (req, res) => {
         if(events.length > 50) events.pop(); // Guardar solo los ultimos 50
     }
 
-    // Respondemos al ESP32 diciéndole si el motor debe estar ON u OFF
+    //  Respondemos al ESP32 diciéndole si el motor debe estar ON u OFF
     res.json({ motorCommand: estadoSistema.motorOn });
 });
 
-// --- ENDPOINTS PARA EL FRONTEND (Netlify llama aquí) ---
+// --- ENDPOINTS PARA EL FRONTEND ---
 
-// 1. El Frontend pide el estado
+// Estado
 app.get('/api/status', (req, res) => {
     res.json(estadoSistema);
 });
@@ -54,19 +54,28 @@ app.get('/api/events', (req, res) => {
     res.json({ events: events });
 });
 
-// 3. El Frontend prende motor
+// Prende motor
 app.post('/api/motor/start', (req, res) => {
     estadoSistema.motorOn = true;
-    res.json({ status: "motor_started" });
+    console.log('Motor ENCENDIDO desde frontend');
+    res.json({ status: "motor_started", motorCommand: true });
 });
 
-// 4. El Frontend apaga motor
+//  Apaga motor
 app.post('/api/motor/stop', (req, res) => {
     estadoSistema.motorOn = false;
-    res.json({ status: "motor_stopped" });
+    console.log('Motor APAGADO desde frontend');
+    res.json({ status: "motor_stopped", motorCommand: false });
+});
+
+// Limpiar eventos desde el frontend
+app.post('/api/events/clear', (req, res) => {
+    events = [];
+    console.log('Eventos limpiados');
+    res.json({ status: "events_cleared", count: 0 });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Servidor corriendo en puerto ${PORT}`);
+    console.log(` Servidor corriendo en puerto ${PORT}`);
 });
