@@ -18,10 +18,15 @@ let events = [];
 
 // --- ENDPOINTS PARA EL ESP32 ---
 
-// El ESP32 envía sus datos aquí constantemente
+// AUMENTAMOS EL LIMITE DE MEMORIA
+// Como no usas Base de Datos, si Render se reinicia, esto se borra.
+// Pero aumentamos a 1000 para que el filtro de fecha tenga sentido en la demo.
+const MAX_EVENTS = 1000; 
+
 app.post('/esp/update', (req, res) => {
     const data = req.body;
-    // Actualizamos sensores y contadores que vienen del ESP32
+    
+    // Actualizamos estado actual
     estadoSistema.sensors = data.sensors;
     estadoSistema.pequenas = data.pequenas;
     estadoSistema.medianas = data.medianas;
@@ -29,16 +34,34 @@ app.post('/esp/update', (req, res) => {
 
     if(data.lastDetection && data.lastDetection.size) {
         estadoSistema.lastDetection = data.lastDetection;
-        // Agregamos al historial de eventos
+        
+        // --- LOGICA DE TURNO AUTOMÁTICO ---
+        // Definimos turnos por hora del servidor:
+        // Mañana: 06:00 - 14:00
+        // Tarde: 14:00 - 22:00
+        // Noche: 22:00 - 06:00
+        const now = new Date();
+        const hora = now.getHours(); // Hora del 0 al 23
+        let turnoActual = "Noche";
+
+        if (hora >= 6 && hora < 14) {
+            turnoActual = "Mañana";
+        } else if (hora >= 14 && hora < 22) {
+            turnoActual = "Tarde";
+        }
+
+        // Agregamos al historial con el campo 'turno'
         events.unshift({
-            ts: new Date().toISOString(),
+            ts: now.toISOString(),
             size: data.lastDetection.size,
-            bits: data.lastDetection.bits
+            bits: data.lastDetection.bits,
+            turno: turnoActual // <--- NUEVO CAMPO
         });
-        if(events.length > 50) events.pop(); // Guardar solo los ultimos 50
+
+        // Mantenemos el historial controlado
+        if(events.length > MAX_EVENTS) events.pop();
     }
 
-    //  Respondemos al ESP32 diciéndole si el motor debe estar ON u OFF
     res.json({ motorCommand: estadoSistema.motorOn });
 });
 
