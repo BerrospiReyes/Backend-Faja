@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// --- ESTADO EN MEMORIA (Se borra si el servidor se reinicia) ---
+// --- ESTADO EN MEMORIA ---
 let estadoSistema = {
     motorOn: false,
     pequenas: 0, medianas: 0, grandes: 0,
@@ -15,14 +15,9 @@ let estadoSistema = {
 };
 
 let events = [];
-
-// --- ENDPOINTS PARA EL ESP32 ---
-
-// AUMENTAMOS EL LIMITE DE MEMORIA
-// Como no usas Base de Datos, si Render se reinicia, esto se borra.
-// Pero aumentamos a 1000 para que el filtro de fecha tenga sentido en la demo.
 const MAX_EVENTS = 1000; 
 
+// --- ENDPOINTS PARA EL ESP32 ---
 app.post('/esp/update', (req, res) => {
     const data = req.body;
     
@@ -35,70 +30,57 @@ app.post('/esp/update', (req, res) => {
     if(data.lastDetection && data.lastDetection.size) {
         estadoSistema.lastDetection = data.lastDetection;
         
-        // --- LOGICA DE TURNO AUTOMÁTICO ---
-        // Definimos turnos por hora del servidor:
-        // Mañana: 06:00 - 14:00
-        // Tarde: 14:00 - 22:00
-        // Noche: 22:00 - 06:00
+        // --- CORRECCIÓN DE HORA Y TURNO (ZONA HORARIA LOCAL) ---
         const now = new Date();
-        const hora = now.getHours(); // Hora del 0 al 23
-        let turnoActual = "Noche";
+        
+        // Obtenemos la hora en formato 24h de la zona horaria 'America/Lima' (UTC-5)
+        // Esto arregla el problema de que Render tenga otra hora
+        const options = { timeZone: 'America/Lima', hour: 'numeric', hour12: false };
+        const formatter = new Intl.DateTimeFormat('en-US', options);
+        const horaPeru = parseInt(formatter.format(now));
 
-        if (hora >= 6 && hora < 14) {
+        // Calculamos turno basado en hora Perú
+        let turnoActual = "Noche";
+        if (horaPeru >= 6 && horaPeru < 14) {
             turnoActual = "Mañana";
-        } else if (hora >= 14 && hora < 22) {
+        } else if (horaPeru >= 14 && horaPeru < 22) {
             turnoActual = "Tarde";
         }
 
-        // Agregamos al historial con el campo 'turno'
+        // Agregamos al historial
         events.unshift({
-            ts: now.toISOString(),
+            ts: now.toISOString(),          // Guardamos fecha técnica (UTC)
             size: data.lastDetection.size,
             bits: data.lastDetection.bits,
-            turno: turnoActual // <--- NUEVO CAMPO
+            turno: turnoActual              // <--- TURNO CALCULADO CON HORA PERÚ
         });
 
-        // Mantenemos el historial controlado
         if(events.length > MAX_EVENTS) events.pop();
     }
 
     res.json({ motorCommand: estadoSistema.motorOn });
 });
 
-// --- ENDPOINTS PARA EL FRONTEND ---
+// --- ENDPOINTS FRONTEND (IGUAL QUE ANTES) ---
+app.get('/api/status', (req, res) => res.json(estadoSistema));
+app.get('/api/events', (req, res) => res.json({ events: events }));
 
-// Estado
-app.get('/api/status', (req, res) => {
-    res.json(estadoSistema);
-});
-
-// 2. El Frontend pide eventos
-app.get('/api/events', (req, res) => {
-    res.json({ events: events });
-});
-
-// Prende motor
 app.post('/api/motor/start', (req, res) => {
     estadoSistema.motorOn = true;
-    console.log('Motor ENCENDIDO desde frontend');
     res.json({ status: "motor_started", motorCommand: true });
 });
 
-//  Apaga motor
 app.post('/api/motor/stop', (req, res) => {
     estadoSistema.motorOn = false;
-    console.log('Motor APAGADO desde frontend');
     res.json({ status: "motor_stopped", motorCommand: false });
 });
 
-// Limpiar eventos desde el frontend
 app.post('/api/events/clear', (req, res) => {
     events = [];
-    console.log('Eventos limpiados');
     res.json({ status: "events_cleared", count: 0 });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(` Servidor corriendo en puerto ${PORT}`);
+    console.log(`Servidor corriendo en puerto ${PORT}`);
 });
